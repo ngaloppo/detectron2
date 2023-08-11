@@ -8,8 +8,12 @@ from detectron2.modeling.backbone.vit import get_vit_lr_decay_rate
 
 from ..common.coco_loader_lsj import dataloader
 
+from detectron2.config import LazyConfig
 
-model = model_zoo.get_config("common/models/mask_rcnn_vitdet.py").model
+
+#model = model_zoo.get_config("common/models/mask_rcnn_vitdet.py").model
+config_filename = model_zoo.get_config_file("common/models/mask_rcnn_vitdet.py")
+model = LazyConfig.load(config_filename).model
 
 # Initialization and trainer settings
 train = model_zoo.get_config("common/train.py").train

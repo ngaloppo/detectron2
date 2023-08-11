@@ -8,8 +8,9 @@ from torch import Tensor, nn
 
 import detectron2.data.transforms as T
 from detectron2.checkpoint import DetectionCheckpointer
-from detectron2.config import get_cfg
+from detectron2.config import get_cfg, LazyConfig, instantiate
 from detectron2.data import build_detection_test_loader, detection_utils
+from detectron2.engine import default_setup
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset, print_csv_format
 from detectron2.export import (
     STABLE_ONNX_OPSET_VERSION,
@@ -129,7 +130,7 @@ def export_tracing(torch_model, inputs):
         dump_torchscript_IR(ts_model, args.output)
     elif args.format == "onnx":
         with PathManager.open(os.path.join(args.output, "model.onnx"), "wb") as f:
-            torch.onnx.export(traceable_model, (image,), f, opset_version=STABLE_ONNX_OPSET_VERSION)
+            torch.onnx.export(traceable_model, (image,), f, opset_version=16)
     logger.info("Inputs schema: " + str(traceable_model.inputs_schema))
     logger.info("Outputs schema: " + str(traceable_model.outputs_schema))
 
@@ -160,11 +161,12 @@ def get_sample_inputs(args):
         return first_batch
     else:
         # get a sample data
-        original_image = detection_utils.read_image(args.sample_image, format=cfg.INPUT.FORMAT)
+        original_image = detection_utils.read_image(args.sample_image, format='RGB')
         # Do same preprocessing as DefaultPredictor
-        aug = T.ResizeShortestEdge(
-            [cfg.INPUT.MIN_SIZE_TEST, cfg.INPUT.MIN_SIZE_TEST], cfg.INPUT.MAX_SIZE_TEST
-        )
+        aug = T.Resize(shape = (1024, 1024))
+        # aug = T.ResizeShortestEdge(
+            # [cfg.INPUT.MIN_SIZE_TEST, cfg.INPUT.MIN_SIZE_TEST], cfg.INPUT.MAX_SIZE_TEST
+        # )
         height, width = original_image.shape[:2]
         image = aug.get_transform(original_image).apply_image(original_image)
         image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
@@ -207,10 +209,14 @@ if __name__ == "__main__":
     # Disable re-specialization on new shapes. Otherwise --run-eval will be slow
     torch._C._jit_set_bailout_depth(1)
 
-    cfg = setup_cfg(args)
+    #cfg = setup_cfg(args)
+    cfg = LazyConfig.load(args.config_file)
+    cfg = LazyConfig.apply_overrides(cfg, args.opts)
+    default_setup(cfg, args)
 
     # create a torch model
-    torch_model = build_model(cfg)
+    # torch_model = build_model(cfg)
+    torch_model = instantiate(cfg.model)
     DetectionCheckpointer(torch_model).resume_or_load(cfg.MODEL.WEIGHTS)
     torch_model.eval()
 
